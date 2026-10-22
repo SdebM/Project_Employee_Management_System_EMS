@@ -20,10 +20,9 @@
     print(salary.formatted_amount)  # "50 000.00 ₽"
 """
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Optional, Union
+from typing import Optional
 from decimal import Decimal
 
 

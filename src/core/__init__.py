@@ -13,9 +13,13 @@
 from .database import Database
 from .config import Config
 from .exceptions import (
-    AppException, DatabaseError, ValidationError,
-    AuthenticationError, PermissionDeniedError,
-    EntityNotFoundError, DuplicateEntityError
+    AppException,
+    DatabaseError,
+    ValidationError,
+    AuthenticationError,
+    PermissionDeniedError,
+    EntityNotFoundError,
+    DuplicateEntityError,
 )
 from .permissions import PermissionManager, check_permission
 

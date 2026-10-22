@@ -6,15 +6,22 @@
 - :class:`AppConfig` - общие настройки приложения
 - :class:`Config` - главный класс конфигурации (Singleton)
 
+Учётные данные БД читаются из окружения (переменные или файл ``.env``
+в корне проекта — см. ``.env.example``). Пароль НЕ имеет значения
+по умолчанию: захардкоженный пароль в репозитории — утечка секрета.
+
 Переменные окружения:
     - ``DB_HOST`` - хост БД (по умолчанию: localhost)
     - ``DB_PORT`` - порт БД (по умолчанию: 5432)
     - ``DB_NAME`` - имя базы данных
     - ``DB_USER`` - пользователь БД
-    - ``DB_PASSWORD`` - пароль БД
+    - ``DB_PASSWORD`` - пароль БД (обязателен; без него запуск
+      невозможен и приложение завершится с понятной ошибкой)
 """
 
 import os
+import logging
+import sys
 from dataclasses import dataclass
 from typing import Optional
 from dotenv import load_dotenv
@@ -46,7 +53,9 @@ class DatabaseConfig:
     """
     dbname: str = "empls_db"
     user: str = "postgres"
-    password: str = "0123"
+    # Пароль намеренно пуст: секреты не хранятся в коде.
+    # Задайте его через переменную окружения DB_PASSWORD или файл .env.
+    password: str = ""
     host: str = "localhost"
     port: str = "5432"
 
@@ -59,11 +68,30 @@ class DatabaseConfig:
         
         Returns:
             Новый экземпляр DatabaseConfig
+        
+        Raises:
+            SystemExit: если DB_PASSWORD не задан — приложение не должно
+                запускаться с пустым паролем БД.
         """
+        password = os.getenv('DB_PASSWORD', '')
+        if not password:
+            logging.critical(
+                "DB_PASSWORD не задан. Создайте файл .env по образцу "
+                ".env.example или экспортируйте переменную окружения."
+            )
+            # Понятное сообщение в stderr вместо traceback psycopg2
+            print(
+                "Ошибка: не задан пароль БД.\n"
+                "Создайте файл .env по образцу .env.example в корне проекта "
+                "или задайте переменную окружения DB_PASSWORD.",
+                file=sys.stderr
+            )
+            raise SystemExit(1)
+        
         return cls(
             dbname=os.getenv('DB_NAME', cls.dbname),
             user=os.getenv('DB_USER', cls.user),
-            password=os.getenv('DB_PASSWORD', cls.password),
+            password=password,
             host=os.getenv('DB_HOST', cls.host),
             port=os.getenv('DB_PORT', cls.port)
         )

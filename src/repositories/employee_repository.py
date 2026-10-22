@@ -143,7 +143,8 @@ class EmployeeRepository(BaseRepository[Employee]):
         """
         params = self._entity_to_params(employee)
         result = self._db.execute_query(query, params, return_result=True)
-        return result[0][0] if result else None
+        # RealDictCursor возвращает список словарей: доступ по имени колонки
+        return result[0]['employee_id'] if result else None
 
     def update(self, employee: Employee) -> bool:
         """Обновляет данные сотрудника.
@@ -166,15 +167,25 @@ class EmployeeRepository(BaseRepository[Employee]):
         return self._db.execute_query(query, params)
 
     def delete(self, employee_id: int) -> bool:
-        """Удаляет сотрудника.
+        """Мягко "удаляет" сотрудника — фактически помечает уволенным.
+        
+        Важно: НЕ выполняет физический DELETE. Жёсткое удаление строки
+        employees каскадно стирало бы всю зарплатную историю сотрудника
+        (salaries.employee_id ON DELETE CASCADE) и обнуляло бы ссылки
+        руководителей отделов. Вместо этого статус меняется на 'fired',
+        а история выплат сохраняется для отчётности.
         
         Args:
-            employee_id: ID сотрудника для удаления
+            employee_id: ID сотрудника для увольнения
             
         Returns:
-            True если удаление успешно
+            True если увольнение выполнено успешно
         """
-        query = "DELETE FROM employees WHERE employee_id = %s"
+        query = """
+            UPDATE employees
+            SET status = 'fired', updated_at = NOW()
+            WHERE employee_id = %s
+        """
         return self._db.execute_query(query, (employee_id,))
 
     def get_by_department(self, department_id: int) -> List[Employee]:
@@ -195,10 +206,16 @@ class EmployeeRepository(BaseRepository[Employee]):
             Список кортежей (department_name, count)
         """
         query = """
-            SELECT d.department_name, COUNT(e.employee_id)
+            SELECT d.department_name, COUNT(e.employee_id) as employee_count
             FROM departments d
             LEFT JOIN employees e ON d.department_id = e.department_id
             GROUP BY d.department_id, d.department_name
             ORDER BY d.department_name
         """
-        return self._db.fetch_all(query)
+        rows = self._db.fetch_all(query)
+        # RealDictCursor возвращает словари — приводим к кортежам
+        # (department_name, count) согласно контракту метода
+        return [
+            (row['department_name'], row['employee_count'])
+            for row in rows
+        ]

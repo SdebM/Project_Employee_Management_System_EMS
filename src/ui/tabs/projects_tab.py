@@ -12,10 +12,20 @@ from datetime import date
 import logging
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView,
-    QLineEdit, QComboBox, QLabel, QMessageBox, QDialog,
-    QFormLayout, QTextEdit, QDateEdit, QDoubleSpinBox
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QLineEdit,
+    QComboBox,
+    QLabel,
+    QDialog,
+    QFormLayout,
+    QTextEdit,
+    QDateEdit,
+    QDoubleSpinBox,
 )
 from PyQt6.QtWidgets import QCheckBox
 from PyQt6.QtCore import Qt, QDate
@@ -26,7 +36,7 @@ from services.project_service import ProjectService
 from services.department_service import DepartmentService
 from core.permissions import Permission
 from core.exceptions import ValidationError, EntityNotFoundError, PermissionDeniedError
-from models.projects import Project, ProjectStatus
+from models.projects import Project
 from styles import TABLE_STYLES, BUTTON_STYLES
 from utils.formatters import Formatters
 
@@ -275,7 +285,6 @@ class ProjectsTab(BaseTab):
                 filters['department_id'] = dept_id
 
             # даты создания/обновления (по чекбоксам)
-            from datetime import timedelta
             if getattr(self, 'created_from_chk', None) and self.created_from_chk.isChecked():
                 d = self.created_from_date.date()
                 filters['created_from'] = date(d.year(), d.month(), d.day())

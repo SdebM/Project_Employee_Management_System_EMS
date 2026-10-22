@@ -9,16 +9,24 @@
 
 from typing import Optional, List
 from datetime import date
-from decimal import Decimal
 import logging
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView,
-    QLineEdit, QComboBox, QLabel, QMessageBox, QDialog,
-    QFormLayout, QTextEdit, QDateEdit, QDoubleSpinBox
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QComboBox,
+    QLabel,
+    QDialog,
+    QFormLayout,
+    QTextEdit,
+    QDateEdit,
+    QDoubleSpinBox,
+    QHeaderView,
 )
-from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtCore import Qt, QDate, QSignalBlocker
 from PyQt6.QtGui import QIcon
 
 from ui.base_tab import BaseTab
@@ -31,12 +39,14 @@ from styles import TABLE_STYLES, BUTTON_STYLES
 from utils.formatters import Formatters
 
 
-# Маппинг типов выплат
+# Маппинг типов выплат.
+# ВАЖНО: должен соответствовать CHECK-ограничению salaries.payment_type
+# в схеме БД ('salary', 'bonus', 'advance'). Тип 'compensation' исключён:
+# попытка сохранения приводила к нарушению CHECK и откату транзакции.
 PAYMENT_TYPE_MAP = {
     'salary': 'Зарплата',
     'bonus': 'Премия',
-    'advance': 'Аванс',
-    'compensation': 'Компенсация'
+    'advance': 'Аванс'
 }
 
 
@@ -141,8 +151,11 @@ class SalariesTab(BaseTab):
         
         self.date_from = QDateEdit()
         self.date_from.setCalendarPopup(True)
-        # По умолчанию показываем данные за последний год
-        self.date_from.setDate(QDate.currentDate().addYears(-1))
+        # Широкий период по умолчанию (10 лет). Раньше стоял 1 год: сиды в
+        # db/empls_db.sql создаются с датами до 3+ лет назад относительно даты
+        # заливки БД, поэтому вся вкладка выглядела пустой — фильтр скрывал
+        # все существующие записи.
+        self.date_from.setDate(QDate.currentDate().addYears(-10))
         
         self.date_to = QDateEdit()
         self.date_to.setCalendarPopup(True)
@@ -169,14 +182,12 @@ class SalariesTab(BaseTab):
         table.setColumnCount(len(columns))
         table.setHorizontalHeaderLabels(columns)
         
-        # Настройка заголовков
+        # Настройка заголовков: равномерное растяжение по ширине,
+        # кроме ID — фиксированная узкая колонка.
         header = table.horizontalHeader()
-        header.setStretchLastSection(True)
-        
-        # Установка начальной ширины колонок
-        column_widths = [50, 180, 150, 100, 120, 100, 200]
-        for i, width in enumerate(column_widths):
-            table.setColumnWidth(i, width)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(0, 50)
         
         # Стили
         table.setStyleSheet(TABLE_STYLES.get("base", ""))
@@ -237,7 +248,8 @@ class SalariesTab(BaseTab):
         self.btn_add.clicked.connect(self.add_salary)
         self.btn_edit.clicked.connect(self.edit_salary)
         self.btn_delete.clicked.connect(self.delete_salary)
-        self.btn_refresh.clicked.connect(self.load_data)
+        # Кнопка обновления — перезагружает и справочники, и данные
+        self.btn_refresh.clicked.connect(self.refresh_all)
         
         self.btn_export_excel.clicked.connect(self.export_to_excel)
         self.btn_export_pdf.clicked.connect(self.export_to_pdf)
@@ -250,24 +262,41 @@ class SalariesTab(BaseTab):
         self.main_table.doubleClicked.connect(self.edit_salary)
 
     def _load_employees(self):
-        """Загружает сотрудников в комбобокс."""
+        """Загружает сотрудников в комбобокс.
+        
+        Обновление элементов QComboBox испускает currentIndexChanged,
+        который связан с trigger_search() → timer → load_data(). Без
+        блокировки сигналов перезаполнение комбобокса из load_data()
+        порождало бесконечный цикл самообновления каждые 300 мс.
+        """
         try:
-            self.employee_combo.clear()
-            self.employee_combo.addItem("Все сотрудники", None)
-            
-            employees = self.employee_service.get_employees(self.user, {})
-            for emp in employees:
-                name = f"{emp.last_name} {emp.first_name}"
-                self.employee_combo.addItem(name, emp.employee_id)
+            # Блокируем сигналы на время перезаполнения — разрываем петлю
+            with QSignalBlocker(self.employee_combo):
+                self.employee_combo.clear()
+                self.employee_combo.addItem("Все сотрудники", None)
+                
+                employees = self.employee_service.get_employees(self.user, {})
+                for emp in employees:
+                    name = f"{emp.last_name} {emp.first_name}"
+                    self.employee_combo.addItem(name, emp.employee_id)
         except Exception as e:
             logging.error(f"Ошибка загрузки сотрудников: {e}")
 
+    def refresh_all(self):
+        """Явное обновление по кнопке: справочник сотрудников + данные."""
+        self._load_employees()
+        self.load_data()
+
     def load_data(self):
-        """Загружает список зарплатных записей из сервиса."""
+        """Загружает список зарплатных записей из сервиса.
+        
+        Note:
+            Не перечитывает справочник сотрудников: перезаполнение
+            комбобокса здесь замыкало цикл currentIndexChanged →
+            trigger_search → load_data. Справочник обновляется один раз
+            при инициализации и явно — кнопкой "Обновить" (refresh_all).
+        """
         try:
-            # Обновляем список сотрудников при каждой загрузке
-            self._load_employees()
-            
             # Собираем фильтры
             filters = {}
             
@@ -302,8 +331,8 @@ class SalariesTab(BaseTab):
         except PermissionDeniedError as e:
             self.show_error("Доступ запрещен", str(e))
         except Exception as e:
-            logging.error(f"Ошибка загрузки зарплат: {e}")
-            self.show_error("Ошибка", "Не удалось загрузить список выплат")
+            logging.error(f"Ошибка загрузки зарплат: {e}", exc_info=True)
+            self.show_error("Ошибка", f"Не удалось загрузить список выплат:\n{e}")
 
     def _populate_table(self, salaries: List[Salary]):
         """Заполняет таблицу данными."""
@@ -352,8 +381,8 @@ class SalariesTab(BaseTab):
             except PermissionDeniedError as e:
                 self.show_error("Доступ запрещен", str(e))
             except Exception as e:
-                logging.error(f"Ошибка добавления: {e}")
-                self.show_error("Ошибка", "Не удалось добавить запись")
+                logging.error(f"Ошибка добавления: {e}", exc_info=True)
+                self.show_error("Ошибка", f"Не удалось добавить запись:\n{e}")
 
     def edit_salary(self):
         """Открывает диалог редактирования записи о зарплате."""
@@ -379,8 +408,8 @@ class SalariesTab(BaseTab):
         except ValidationError as e:
             self.show_error("Ошибка валидации", e.message)
         except Exception as e:
-            logging.error(f"Ошибка редактирования: {e}")
-            self.show_error("Ошибка", "Не удалось обновить данные")
+            logging.error(f"Ошибка редактирования: {e}", exc_info=True)
+            self.show_error("Ошибка", f"Не удалось обновить данные:\n{e}")
 
     def delete_salary(self):
         """Удаляет выбранную запись о зарплате."""
@@ -403,8 +432,8 @@ class SalariesTab(BaseTab):
         except PermissionDeniedError as e:
             self.show_error("Доступ запрещен", str(e))
         except Exception as e:
-            logging.error(f"Ошибка удаления: {e}")
-            self.show_error("Ошибка", "Не удалось удалить запись")
+            logging.error(f"Ошибка удаления: {e}", exc_info=True)
+            self.show_error("Ошибка", f"Не удалось удалить запись:\n{e}")
 
     def _get_export_filename(self, extension: str) -> str:
         return f"salaries.{extension}"
@@ -527,8 +556,11 @@ class SalaryDialog(QDialog):
         effective_date = self.date_edit.date()
         
         return {
+            # Ключ 'amount' — контракт SalaryService.create_salary;
+            # раньше сюда уходил 'salary_amount', из-за чего создание
+            # записи всегда падало с ValidationError "Сумма обязательна"
             'employee_id': self.employee_combo.currentData(),
-            'salary_amount': self.amount_spin.value(),
+            'amount': self.amount_spin.value(),
             'payment_type': self.type_combo.currentData(),
             'effective_date': date(effective_date.year(), effective_date.month(), effective_date.day()),
             'description': self.description_edit.toPlainText().strip() or None

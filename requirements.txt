@@ -1,11 +1,29 @@
-PyQt6
-psycopg2
-pandas
-openpyxl
-XlsxWriter
-reportlab
-matplotlib
-sphinx
-bcrypt
-python-dotenv
-#pip install -r requirements.txt
+# Зависимости Employee Management System (EMS).
+# Версии зафиксированы (аудит: незафиксированные зависимости = невоспроизводимые сборки).
+# Обновление: обновляйте осознанно, проверяя совместимость, а не "pip install -U".
+
+# GUI
+PyQt6==6.7.1
+
+# База данных
+psycopg2-binary==2.9.13
+
+# Экспорт данных
+pandas==2.2.3
+openpyxl==3.1.5
+XlsxWriter==3.2.9
+reportlab==4.4.9
+
+# Графики аналитики
+matplotlib==3.9.2
+
+# Безопасность
+bcrypt==5.0.0
+
+# Конфигурация (.env)
+python-dotenv==1.2.2
+
+# Сборка документации (опционально; не требуется для запуска приложения)
+sphinx==8.1.3
+
+# Установка: pip install -r requirements.txt

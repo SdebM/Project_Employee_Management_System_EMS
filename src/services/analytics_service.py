@@ -1,13 +1,9 @@
 """Сервис аналитики и построения графиков."""
 
-from typing import Any, Dict, List, Optional
-from datetime import date, datetime
-from decimal import Decimal
-import logging
+from typing import Any, Dict, List
 
 from core.database import Database
 from core.permissions import Permission, check_permission
-from core.exceptions import PermissionDeniedError
 
 
 class AnalyticsService:
@@ -44,7 +40,7 @@ class AnalyticsService:
 
         rows = self._db.fetch_all(query)
         return [
-            {'department_name': row[0], 'count': row[1]}
+            {'department_name': row['department_name'], 'count': row['count']}
             for row in rows
         ]
     
@@ -107,8 +103,8 @@ class AnalyticsService:
         
         return [
             {
-                'status': status_names.get(row[0], row[0]),
-                'count': row[1]
+                'status': status_names.get(row['status'], row['status']),
+                'count': row['count']
             }
             for row in rows
         ]
@@ -147,8 +143,8 @@ class AnalyticsService:
         rows = self._db.fetch_all(query)
         return [
             {
-                'department_name': row[0],
-                'avg_salary': float(row[1]) if row[1] else 0
+                'department_name': row['department_name'],
+                'avg_salary': float(row['avg_salary']) if row['avg_salary'] else 0
             }
             for row in rows
         ]
@@ -225,11 +221,11 @@ class AnalyticsService:
         rows = self._db.fetch_all(query)
         return [
             {
-                'department_name': row[0],
-                'employee_count': row[1],
-                'project_count': row[2],
-                'total_salary': float(row[3]) if row[3] else 0,
-                'avg_salary': float(row[4]) if row[4] else 0
+                'department_name': row['department_name'],
+                'employee_count': row['employee_count'],
+                'project_count': row['project_count'],
+                'total_salary': float(row['total_salary']) if row['total_salary'] else 0,
+                'avg_salary': float(row['avg_salary']) if row['avg_salary'] else 0
             }
             for row in rows
         ]
@@ -251,7 +247,7 @@ class AnalyticsService:
         """
         
         rows = self._db.fetch_all(query)
-        return {row[0]: row[1] for row in rows}
+        return {row['gender']: row['count'] for row in rows}
 
     def get_age_distribution(self, user: dict) -> List[Dict[str, Any]]:
         """Возвращает распределение сотрудников по возрастным группам.
@@ -279,6 +275,6 @@ class AnalyticsService:
         
         rows = self._db.fetch_all(query)
         return [
-            {'age_group': row[0], 'count': row[1]}
+            {'age_group': row['age_group'], 'count': row['count']}
             for row in rows
         ]

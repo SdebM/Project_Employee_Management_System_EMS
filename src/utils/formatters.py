@@ -196,6 +196,34 @@ class Formatters:
         return mapping.get(role, role or "")
 
     @staticmethod
+    def mask_confidential(
+        value: Optional[str],
+        visible_tail: int = 2,
+        mask_char: str = "•"
+    ) -> str:
+        """Маскирует конфиденциальную строку (ИНН, СНИЛС, паспорт).
+
+        Показывает только последние ``visible_tail`` символов,
+        всё остальное заменяется маской. Используется, когда у
+        пользователя нет права Permission.VIEW_CONFIDENTIAL.
+
+        Args:
+            value: Исходная строка
+            visible_tail: Сколько последних символов оставить открытыми
+            mask_char: Символ маски
+
+        Returns:
+            Замаскированная строка, например "******67";
+            пустая строка, если значение отсутствует.
+        """
+        if not value:
+            return ""
+        text = str(value)
+        if len(text) <= visible_tail:
+            return mask_char * len(text)
+        return mask_char * (len(text) - visible_tail) + text[-visible_tail:]
+
+    @staticmethod
     def truncate_text(text: Optional[str], max_length: int = 50) -> str:
         """Обрезает текст до указанной длины с многоточием."""
         if not text:

@@ -1,6 +1,12 @@
 -- ============================================
--- EMS: Схема базы данных PostgreSQL
+-- EMS: Каноничная схема базы данных PostgreSQL
 -- ============================================
+-- ПРИМЕЧАНИЕ: это основная схема проекта (в отличие от db/empls_db.sql).
+-- Колонки is_active в departments/salaries/projects добавлены явно:
+-- репозитории (BaseRepository.soft_delete_column) используют мягкое
+-- удаление и выполняют UPDATE ... SET is_active = FALSE, поэтому
+-- без этих колонок любое удаление отдела/зарплаты/проекта падало бы
+-- с UndefinedColumn.
 
 -- Порядок создания учитывает зависимости FK
 
@@ -10,6 +16,7 @@ CREATE TABLE IF NOT EXISTS departments (
     department_name VARCHAR(255) NOT NULL UNIQUE,
     description TEXT,                            -- Описание отдела
     manager_id INTEGER,                          -- FK добавляется после создания employees
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,     -- мягкое удаление (BaseRepository)
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -55,7 +62,8 @@ ALTER TABLE departments
     FOREIGN KEY (manager_id) REFERENCES employees(employee_id)
     ON DELETE SET NULL ON UPDATE CASCADE;
 
--- 4. Зарплаты
+-- 4. Зарплаты (финансовые записи никогда не удаляются физически —
+--     мягкое удаление через is_active)
 CREATE TABLE IF NOT EXISTS salaries (
     salary_id SERIAL PRIMARY KEY,
     employee_id INTEGER NOT NULL REFERENCES employees(employee_id)
@@ -65,6 +73,7 @@ CREATE TABLE IF NOT EXISTS salaries (
     payment_type VARCHAR(20) NOT NULL DEFAULT 'salary'
         CHECK (payment_type IN ('salary', 'bonus', 'advance')),
     description TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,     -- мягкое удаление (BaseRepository)
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -81,6 +90,7 @@ CREATE TABLE IF NOT EXISTS projects (
     budget NUMERIC(12, 2) CHECK (budget >= 0),
     department_id INTEGER NOT NULL REFERENCES departments(department_id)
         ON DELETE CASCADE ON UPDATE CASCADE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,     -- мягкое удаление (BaseRepository)
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -154,12 +164,14 @@ CREATE TRIGGER trg_projects_updated
 
 -- ============================================
 -- Начальные данные: администратор
--- Пароль: admin (bcrypt-хеш)
+-- Логин:  admin
+-- Пароль: Admin123!  (ОБЯЗАТЕЛЬНО сменить после первого входа!
+-- Хеш соответствует bcrypt и политике Validators.validate_password)
 -- ============================================
 
 INSERT INTO users (username, password_hash, role)
 VALUES (
     'admin',
-    '$2b$12$LJ3m4ys3GZfnMRqzL0aX8.5F5R1XD0eCRqXK9V6N7y5FdXhJzKWWe',
+    '$2b$12$jJYvp7Nr4kxqTIfAKyNx3u1umE1sSgqNadKJo1Zh/11N5pzseZGAS',
     'admin'
 ) ON CONFLICT (username) DO NOTHING;

@@ -68,13 +68,13 @@ class UserRepository(BaseRepository[User]):
         users = []
         for row in rows:
             user = User(
-                id=row[0],
-                username=row[1],
+                id=row['id'],
+                username=row['username'],
                 password_hash="",  # Не выбираем пароли для безопасности
-                role=row[2],
-                department_id=row[3],
-                is_active=row[4],
-                created_at=row[5] if len(row) > 5 else None,
+                role=row['role'],
+                department_id=row['department_id'],
+                is_active=row['is_active'],
+                created_at=row.get('created_at'),
             )
             users.append(user)
         return users
@@ -89,13 +89,13 @@ class UserRepository(BaseRepository[User]):
         row = self._db.fetch_one(query, (user_id,))
         if row:
             return User(
-                id=row[0],
-                username=row[1],
+                id=row['id'],
+                username=row['username'],
                 password_hash="",  # Не выбираем пароль для безопасности
-                role=row[2],
-                department_id=row[3],
-                is_active=row[4],
-                created_at=row[5] if len(row) > 5 else None,
+                role=row['role'],
+                department_id=row['department_id'],
+                is_active=row['is_active'],
+                created_at=row.get('created_at'),
             )
         return None
     
@@ -139,7 +139,8 @@ class UserRepository(BaseRepository[User]):
         """
         params = self._entity_to_params(user)
         result = self._db.execute_query(query, params, return_result=True)
-        return result[0][0] if result else None
+        # RealDictCursor возвращает список словарей: доступ по имени колонки
+        return result[0]['id'] if result else None
 
     def update(self, user: User) -> bool:
         """Обновляет данные пользователя (без пароля)."""

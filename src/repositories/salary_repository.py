@@ -119,7 +119,8 @@ class SalaryRepository(BaseRepository[Salary]):
         """
         params = self._entity_to_params(salary)
         result = self._db.execute_query(query, params, return_result=True)
-        return result[0][0] if result else None
+        # RealDictCursor возвращает список словарей: доступ по имени колонки
+        return result[0]['salary_id'] if result else None
 
     def update(self, salary: Salary) -> bool:
         """Обновляет данные о зарплате."""
@@ -193,9 +194,10 @@ class SalaryRepository(BaseRepository[Salary]):
             Общая сумма выплат
         """
         query = """
-            SELECT COALESCE(SUM(salary_amount), 0)
+            SELECT COALESCE(SUM(salary_amount), 0) AS total
             FROM salaries
             WHERE effective_date BETWEEN %s AND %s
         """
         result = self._db.fetch_one(query, (date_from, date_to))
-        return Decimal(str(result[0])) if result else Decimal("0")
+        # RealDictRow — словарь: доступ по алиасу колонки
+        return Decimal(str(result['total'])) if result else Decimal("0")

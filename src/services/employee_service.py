@@ -19,14 +19,14 @@
 
 from typing import List, Optional, Dict, Any
 from datetime import date
-import logging
 
 from models.employees import Employee
 from repositories.employee_repository import EmployeeRepository
 from core.database import Database
-from core.permissions import Permission, check_permission
+from core.permissions import Permission, PermissionManager, check_permission
 from core.exceptions import ValidationError, EntityNotFoundError
 from utils.validators import Validators
+from utils.formatters import Formatters
 
 
 class EmployeeService:
@@ -82,7 +82,28 @@ class EmployeeService:
         if user.get('role') == 'manager' and user.get('department_id'):
             filters['department_id'] = user['department_id']
         
-        return self._repository.get_all(filters)
+        employees = self._repository.get_all(filters)
+        return self._mask_confidential(user, employees)
+
+    @staticmethod
+    def _mask_confidential(user: dict, employees) -> list:
+        """Маскирует ИНН/СНИЛС/паспорт, если нет права VIEW_CONFIDENTIAL.
+
+        Право есть только у роли admin (см. core.permissions.ROLE_PERMISSIONS),
+        но раньше оно нигде не использовалось, и персональные данные
+        (ИНН, СНИЛС, паспорт) были видны всем ролям в диалогах и выгрузках.
+        Замена выполняется по значению, поэтому в таблицы/экспорт
+        замаскированные значения попадают уже на уровне сервиса.
+        """
+        pm = PermissionManager(user)
+        if pm.has_permission(Permission.VIEW_CONFIDENTIAL):
+            return employees
+        
+        for emp in employees:
+            emp.inn = Formatters.mask_confidential(emp.inn) or None
+            emp.snils = Formatters.mask_confidential(emp.snils) or None
+            emp.passport = Formatters.mask_confidential(emp.passport) or None
+        return employees
 
     def get_employee_by_id(self, user: dict, employee_id: int) -> Optional[Employee]:
         """Получает сотрудника по ID.
@@ -105,7 +126,10 @@ class EmployeeService:
             # Менеджер может видеть только сотрудников своего отдела
             if employee.department_id != user.get('department_id'):
                 return None
-                
+        
+        if employee:
+            self._mask_confidential(user, [employee])
+        
         return employee
 
     def create_employee(self, user: dict, data: Dict[str, Any]) -> int:
@@ -249,7 +273,6 @@ class EmployeeService:
         
         # Валидация возраста
         if data.get('date_of_birth') and data.get('hire_date'):
-            age_at_hire = self._calculate_age(data['date_of_birth'], data['hire_date'])
             is_valid, msg = Validators.validate_age(data['date_of_birth'], min_age=18)
             if not is_valid:
                 raise ValidationError(msg, "date_of_birth")

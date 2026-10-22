@@ -3,7 +3,6 @@
 from typing import List, Optional, Dict, Any
 from datetime import date
 from decimal import Decimal
-import logging
 
 from models.salaries import Salary
 from repositories.salary_repository import SalaryRepository
@@ -34,8 +33,16 @@ class SalaryService:
         return self._repository.get_by_id(salary_id)
 
     def create_salary(self, user: dict, data: Dict[str, Any]) -> int:
-        """Создает новую запись о зарплате."""
+        """Создает новую запись о зарплате.
+        
+        Принимает сумму в поле ``amount``; для обратной совместимости
+        допускается также ``salary_amount`` (старое имя из UI-диалога).
+        """
         check_permission(user, Permission.CREATE_SALARY)
+        
+        # Нормализация: оба варианта имени ключа сводятся к 'amount'
+        if 'amount' not in data and 'salary_amount' in data:
+            data['amount'] = data.pop('salary_amount')
         
         self._validate_salary_data(data)
         
@@ -70,10 +77,14 @@ class SalaryService:
         if not salary:
             raise EntityNotFoundError("Запись о зарплате", salary_id)
         
-        self._validate_salary_data(data, is_update=True)
-        
+        # Нормализация ключей суммы: UI может прислать 'amount' или
+        # 'salary_amount' — атрибут модели называется salary_amount
+        if 'amount' in data:
+            data['salary_amount'] = data.pop('amount')
         if 'salary_amount' in data:
             data['salary_amount'] = Decimal(str(data['salary_amount']))
+        
+        self._validate_salary_data(data, is_update=True)
         
         for field, value in data.items():
             if hasattr(salary, field):
@@ -129,9 +140,12 @@ class SalaryService:
             if not data.get('amount'):
                 raise ValidationError("Сумма обязательна", "amount")
         
-        if data.get('amount') is not None:
+        # Проверяем сумму независимо от имени ключа ('amount' при создании,
+        # 'salary_amount' после нормализации при обновлении)
+        amount_raw = data.get('amount', data.get('salary_amount'))
+        if amount_raw is not None:
             try:
-                amount = Decimal(str(data['amount']))
+                amount = Decimal(str(amount_raw))
                 if amount <= 0:
                     raise ValidationError("Сумма должна быть положительной", "amount")
             except (ValueError, TypeError, ArithmeticError):
@@ -139,4 +153,4 @@ class SalaryService:
         
         valid_types = ['salary', 'bonus', 'advance']
         if data.get('payment_type') and data['payment_type'] not in valid_types:
-            raise ValidationError(f"Недопустимый тип выплаты", "payment_type")
+            raise ValidationError("Недопустимый тип выплаты", "payment_type")

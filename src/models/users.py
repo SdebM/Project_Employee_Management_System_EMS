@@ -20,10 +20,9 @@
         print(user.is_admin)  # True
 """
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional
 from enum import Enum
 
 

@@ -2,7 +2,6 @@
 
 from typing import List, Optional, Dict, Any
 from datetime import date
-import logging
 
 from models.projects import Project
 from repositories.project_repository import ProjectRepository

@@ -36,12 +36,19 @@ from datetime import datetime
 from core.config import Config
 from core.database import Database
 from repositories import (
-    EmployeeRepository, DepartmentRepository,
-    ProjectRepository, SalaryRepository, UserRepository
+    EmployeeRepository,
+    DepartmentRepository,
+    ProjectRepository,
+    SalaryRepository,
+    UserRepository,
 )
 from services import (
-    EmployeeService, DepartmentService, ProjectService,
-    SalaryService, AuthService, AnalyticsService
+    EmployeeService,
+    DepartmentService,
+    ProjectService,
+    SalaryService,
+    AuthService,
+    AnalyticsService,
 )
 
 

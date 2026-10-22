@@ -32,7 +32,7 @@
     - :mod:`services` - использование в сервисах
 """
 
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Set
 from functools import wraps
 from .exceptions import PermissionDeniedError
 

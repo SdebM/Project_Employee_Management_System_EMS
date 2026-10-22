@@ -11,10 +11,18 @@ from typing import Optional, List
 import logging
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView,
-    QLineEdit, QLabel, QMessageBox, QDialog,
-    QFormLayout, QTextEdit, QComboBox, QSpinBox
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QLineEdit,
+    QLabel,
+    QDialog,
+    QFormLayout,
+    QTextEdit,
+    QComboBox,
+    QHeaderView,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
@@ -132,14 +140,12 @@ class DepartmentsTab(BaseTab):
         table.setColumnCount(len(columns))
         table.setHorizontalHeaderLabels(columns)
         
-        # Настройка заголовков
+        # Настройка заголовков: равномерное растяжение по ширине,
+        # кроме ID — фиксированная узкая колонка.
         header = table.horizontalHeader()
-        header.setStretchLastSection(True)
-        
-        # Установка начальной ширины колонок
-        column_widths = [50, 200, 300, 150, 100]
-        for i, width in enumerate(column_widths):
-            table.setColumnWidth(i, width)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(0, 50)
         
         # Стили
         table.setStyleSheet(TABLE_STYLES.get("base", ""))
@@ -220,7 +226,7 @@ class DepartmentsTab(BaseTab):
             self.show_error("Доступ запрещен", str(e))
         except Exception as e:
             self.logger.exception(f"Ошибка загрузки отделов: {e}")
-            self.show_error("Ошибка", "Не удалось загрузить список отделов")
+            self.show_error("Ошибка", f"Не удалось загрузить список отделов:\n{e}")
 
     def _populate_table(self, departments: List[Department]):
         """Заполняет таблицу данными."""
@@ -255,8 +261,8 @@ class DepartmentsTab(BaseTab):
             except PermissionDeniedError as e:
                 self.show_error("Доступ запрещен", str(e))
             except Exception as e:
-                logging.error(f"Ошибка добавления: {e}")
-                self.show_error("Ошибка", "Не удалось добавить отдел")
+                logging.error(f"Ошибка добавления: {e}", exc_info=True)
+                self.show_error("Ошибка", f"Не удалось добавить отдел:\n{e}")
 
     def edit_department(self):
         """Открывает диалог редактирования отдела."""
@@ -282,8 +288,8 @@ class DepartmentsTab(BaseTab):
         except ValidationError as e:
             self.show_error("Ошибка валидации", e.message)
         except Exception as e:
-            logging.error(f"Ошибка редактирования: {e}")
-            self.show_error("Ошибка", "Не удалось обновить данные")
+            logging.error(f"Ошибка редактирования: {e}", exc_info=True)
+            self.show_error("Ошибка", f"Не удалось обновить данные:\n{e}")
 
     def delete_department(self):
         """Удаляет выбранный отдел."""
@@ -308,8 +314,8 @@ class DepartmentsTab(BaseTab):
         except PermissionDeniedError as e:
             self.show_error("Доступ запрещен", str(e))
         except Exception as e:
-            logging.error(f"Ошибка удаления: {e}")
-            self.show_error("Ошибка", "Не удалось удалить отдел")
+            logging.error(f"Ошибка удаления: {e}", exc_info=True)
+            self.show_error("Ошибка", f"Не удалось удалить отдел:\n{e}")
 
     def _get_export_filename(self, extension: str) -> str:
         return f"departments.{extension}"

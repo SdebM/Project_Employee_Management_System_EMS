@@ -1,13 +1,19 @@
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QTableWidget, QMessageBox, QLineEdit, QApplication, QFileDialog
+    QWidget,
+    QHBoxLayout,
+    QPushButton,
+    QTableWidget,
+    QMessageBox,
+    QApplication,
+    QFileDialog,
 )
 from PyQt6.QtCore import QTimer, Qt, QThread
 
 from core.permissions import PermissionManager, Permission
 from services.export_service import ExportService
 from utils.workers import BackgroundWorker
+from utils.table_snapshot import TableSnapshot
 
 
 class BaseTab(QWidget):
@@ -115,14 +121,19 @@ class BaseTab(QWidget):
             self.show_warning("Внимание", "Нет данных для экспорта")
             return
 
+        # ВАЖНО: снимаем данные таблицы В GUI-потоке. Передача QTableWidget
+        # в фоновый QThread приводила к чтению виджета из другого потока —
+        # это запрещено в Qt и вызывает недетерминированные падения.
+        snapshot = TableSnapshot.from_table(self.main_table)
+
         if export_type == 'pdf':
             file_path, _ = QFileDialog.getSaveFileName(self, "Экспорт в PDF", default_name, "PDF Files (*.pdf)")
             if not file_path: return
-            task = lambda: ExportService.export_to_pdf(self.main_table, file_path, doc_title)
+            task = lambda: ExportService.export_to_pdf(snapshot, file_path, doc_title)
         else:
             file_path, _ = QFileDialog.getSaveFileName(self, "Экспорт в Excel", default_name, "Excel Files (*.xlsx)")
             if not file_path: return
-            task = lambda: ExportService.export_to_excel(self.main_table, file_path, doc_title)
+            task = lambda: ExportService.export_to_excel(snapshot, file_path, doc_title)
 
         def on_success(_):
             self.show_info("Успех", f"Данные успешно экспортированы:\n{file_path}")

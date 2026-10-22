@@ -22,10 +22,9 @@
         )
         print(project.duration_days)  # 365
 """
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Optional, List, Union
+from typing import Optional, List
 from decimal import Decimal
 from enum import Enum
 

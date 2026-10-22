@@ -1,14 +1,24 @@
 from typing import Optional, List
-from datetime import datetime, date
+from datetime import date
 import logging
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView,
-    QLineEdit, QComboBox, QLabel, QMessageBox, QDialog,
-    QFormLayout, QDialogButtonBox
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QLineEdit,
+    QComboBox,
+    QLabel,
+    QMessageBox,
+    QDialog,
+    QFormLayout,
+    QDialogButtonBox,
+    QHeaderView,
+    QDateEdit,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QIcon
 
 from ui.base_tab import BaseTab
@@ -22,19 +32,41 @@ from utils.formatters import Formatters
 
 
 class EmployeeDialog(QDialog):
-    def __init__(self, parent, departments, employee: Optional[Employee] = None):
+    """Диалог добавления/редактирования сотрудника.
+    
+    Поля ИНН/СНИЛС/Паспорт доступны для просмотра и редактирования только
+    при наличии права Permission.VIEW_CONFIDENTIAL (роль admin).
+    Без этого права поля показываются замаскированными и только для чтения,
+    а их значения исключаются из результата get_data(), чтобы замаскированные
+    строки не перезаписали реальные данные в БД.
+    """
+
+    def __init__(self, parent, departments, employee: Optional[Employee] = None,
+                 can_view_confidential: bool = False):
         super().__init__(parent)
+        self.can_view_confidential = can_view_confidential
         self.setWindowTitle("Добавить сотрудника" if not employee else "Редактировать сотрудника")
         self.layout = QFormLayout(self)
 
         self.first_name = QLineEdit()
         self.last_name = QLineEdit()
-        self.date_of_birth = QLineEdit()
-        self.date_of_birth.setPlaceholderText("дд.мм.гггг")
+
+        # Даты — QDateEdit с календарём. Раньше это были свободные текстовые
+        # поля: неверный формат или пустое значение молча превращались в NULL,
+        # и INSERT падал с нарушением NOT NULL без понятного сообщения.
+        self.date_of_birth = QDateEdit()
+        self.date_of_birth.setCalendarPopup(True)
+        self.date_of_birth.setDisplayFormat("dd.MM.yyyy")
+        self.date_of_birth.setDate(QDate(1990, 1, 1))
+        self.date_of_birth.setMaximumDate(QDate.currentDate())
+
         self.gender = QComboBox()
         self.gender.addItems(["М", "Ж"])
-        self.hire_date = QLineEdit()
-        self.hire_date.setPlaceholderText("дд.мм.гггг")
+
+        self.hire_date = QDateEdit()
+        self.hire_date.setCalendarPopup(True)
+        self.hire_date.setDisplayFormat("dd.MM.yyyy")
+        self.hire_date.setDate(QDate.currentDate())
         self.department = QComboBox()
         self.department.addItem("Не указан", None)
         for d_id, d_name in departments:
@@ -45,6 +77,12 @@ class EmployeeDialog(QDialog):
         self.inn = QLineEdit()
         self.snils = QLineEdit()
         self.passport = QLineEdit()
+        
+        # Персональные данные: только для чтения без права VIEW_CONFIDENTIAL
+        if not self.can_view_confidential:
+            for field in (self.inn, self.snils, self.passport):
+                field.setReadOnly(True)
+                field.setPlaceholderText("Нет права просмотра")
 
         self.layout.addRow("Имя:", self.first_name)
         self.layout.addRow("Фамилия:", self.last_name)
@@ -66,22 +104,39 @@ class EmployeeDialog(QDialog):
         if employee:
             self._load_data(employee)
 
+    @staticmethod
+    def _to_qdate(value) -> QDate:
+        """datetime.date | None -> QDate (None -> текущая дата)."""
+        if isinstance(value, date):
+            return QDate(value.year, value.month, value.day)
+        return QDate.currentDate()
+
     def _load_data(self, emp: Employee):
         self.first_name.setText(emp.first_name)
         self.last_name.setText(emp.last_name)
-        self.date_of_birth.setText(Formatters.format_date(emp.date_of_birth))
+        self.date_of_birth.setDate(self._to_qdate(emp.date_of_birth))
         self.gender.setCurrentText(emp.gender or "М")
-        self.hire_date.setText(Formatters.format_date(emp.hire_date))
+        self.hire_date.setDate(self._to_qdate(emp.hire_date))
         if emp.department_id:
             for i in range(self.department.count()):
                 if self.department.itemData(i) == emp.department_id:
                     self.department.setCurrentIndex(i)
                     break
         self.phone.setText(emp.phone or "")
+        # ИЗМЕНЕНИЕ (HF-6): email раньше не заполнялся вообще — при открытии
+        # диалога поле было пустым даже при наличии email в БД, а повторное
+        # сохранение стирало существующий адрес (get_data() отдавал None).
         self.email.setText(emp.email or "")
-        self.inn.setText(emp.inn or "")
-        self.snils.setText(emp.snils or "")
-        self.passport.setText(emp.passport or "")
+        # Конфиденциальные поля: без права VIEW_CONFIDENTIAL показываем маску
+        # (значения в диалог приходят уже замаскированными из сервиса)
+        if self.can_view_confidential:
+            self.inn.setText(emp.inn or "")
+            self.snils.setText(emp.snils or "")
+            self.passport.setText(emp.passport or "")
+        else:
+            self.inn.setText(Formatters.mask_confidential(emp.inn))
+            self.snils.setText(Formatters.mask_confidential(emp.snils))
+            self.passport.setText(Formatters.mask_confidential(emp.passport))
 
     def get_data(self):
         data = {
@@ -91,21 +146,22 @@ class EmployeeDialog(QDialog):
             'department_id': self.department.currentData(),
             'phone': self.phone.text().strip() or None,
             'email': self.email.text().strip() or None,
-            'inn': self.inn.text().strip() or None,
-            'snils': self.snils.text().strip() or None,
-            'passport': self.passport.text().strip() or None,
         }
-        def _parse(d):
-            if not d: return None
-            for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
-                try: return datetime.strptime(d, fmt).date()
-                except Exception: continue
-            return None
+        # Без права VIEW_CONFIDENTIAL ПДн не включаем в результат:
+        # в полях может быть маска, и она не должна уйти в БД.
+        # Отсутствие ключей сохранит прежние значения (setattr по hasattr).
+        if self.can_view_confidential:
+            data['inn'] = self.inn.text().strip() or None
+            data['snils'] = self.snils.text().strip() or None
+            data['passport'] = self.passport.text().strip() or None
 
-        dob = _parse(self.date_of_birth.text().strip())
-        hd = _parse(self.hire_date.text().strip())
-        if dob: data['date_of_birth'] = dob
-        if hd: data['hire_date'] = hd
+        # Даты включаются ВСЕГДА (QDateEdit не даёт ввести пустоту/мусор):
+        # date_of_birth NOT NULL в БД, раньше пустое поле молча давало NULL
+        # и SQL-ошибку без объяснения.
+        dob = self.date_of_birth.date()
+        data['date_of_birth'] = date(dob.year(), dob.month(), dob.day())
+        hd = self.hire_date.date()
+        data['hire_date'] = date(hd.year(), hd.month(), hd.day())
         return data
 
 
@@ -174,11 +230,21 @@ class EmployeesTabNew(BaseTab):
 
     def _create_table(self) -> QTableWidget:
         table = QTableWidget()
-        columns = ["ID", "Имя", "Фамилия", "Дата рождения", "Пол", "Дата приема", "Отдел", "Статус"]
+        # ИЗМЕНЕНИЕ (HF-6): добавлены колонки Телефон/Email/ИНН/СНИЛС/Паспорт.
+        # ПДн приходят из сервиса уже замаскированными для ролей без
+        # VIEW_CONFIDENTIAL (см. EmployeeService._mask_confidential).
+        columns = ["ID", "Имя", "Фамилия", "Дата рождения", "Пол", "Дата приема",
+                   "Отдел", "Телефон", "Email", "ИНН", "СНИЛС", "Паспорт", "Статус"]
         table.setColumnCount(len(columns))
         table.setHorizontalHeaderLabels(columns)
+
+        # Равномерное растяжение всех колонок по ширине таблицы,
+        # кроме ID — фиксированная узкая колонка.
         header = table.horizontalHeader()
-        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(0, 50)
+
         table.setStyleSheet(TABLE_STYLES.get("base", ""))
         header.setStyleSheet(TABLE_STYLES.get("header", ""))
         table.setAlternatingRowColors(True)
@@ -250,7 +316,13 @@ class EmployeesTabNew(BaseTab):
             self.main_table.setItem(row, 4, QTableWidgetItem(emp.gender))
             self.main_table.setItem(row, 5, QTableWidgetItem(Formatters.format_date(emp.hire_date)))
             self.main_table.setItem(row, 6, QTableWidgetItem(emp.department_name or ""))
-            self.main_table.setItem(row, 7, QTableWidgetItem(Formatters.format_status(emp.status)))
+            # HF-6: контакты и ПДн (для не-админа — замаскированные сервисом)
+            self.main_table.setItem(row, 7, QTableWidgetItem(emp.phone or ""))
+            self.main_table.setItem(row, 8, QTableWidgetItem(emp.email or ""))
+            self.main_table.setItem(row, 9, QTableWidgetItem(emp.inn or ""))
+            self.main_table.setItem(row, 10, QTableWidgetItem(emp.snils or ""))
+            self.main_table.setItem(row, 11, QTableWidgetItem(emp.passport or ""))
+            self.main_table.setItem(row, 12, QTableWidgetItem(Formatters.format_status(emp.status)))
             for col in range(self.main_table.columnCount()):
                 item = self.main_table.item(row, col)
                 if item: item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -258,7 +330,13 @@ class EmployeesTabNew(BaseTab):
     def add_employee(self):
         try:
             departments = self.department_service.get_departments_for_dropdown()
-            dialog = EmployeeDialog(self, departments)
+            can_view_confidential = self.permission_manager.has_permission(
+                Permission.VIEW_CONFIDENTIAL
+            )
+            dialog = EmployeeDialog(
+                self, departments,
+                can_view_confidential=can_view_confidential
+            )
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 data = dialog.get_data()
                 employee_id = self.employee_service.create_employee(self.user, data)
@@ -269,8 +347,10 @@ class EmployeesTabNew(BaseTab):
         except PermissionDeniedError as e:
             self.show_error("Доступ запрещен", str(e))
         except Exception as e:
-            logging.error(f"Ошибка добавления: {e}")
-            self.show_error("Ошибка", "Не удалось добавить сотрудника")
+            logging.error(f"Ошибка добавления: {e}", exc_info=True)
+            # Показываем причину: без неё «Не удалось добавить» не даёт
+            # понять, что не так (например, нет IDENTITY у employee_id в БД).
+            self.show_error("Ошибка", f"Не удалось добавить сотрудника:\n{e}")
 
     def edit_employee(self):
         employee_id = self.get_selected_row_id()
@@ -281,7 +361,13 @@ class EmployeesTabNew(BaseTab):
                 self.show_error("Ошибка", "Сотрудник не найден")
                 return
             departments = self.department_service.get_departments_for_dropdown()
-            dialog = EmployeeDialog(self, departments, employee=employee)
+            can_view_confidential = self.permission_manager.has_permission(
+                Permission.VIEW_CONFIDENTIAL
+            )
+            dialog = EmployeeDialog(
+                self, departments, employee=employee,
+                can_view_confidential=can_view_confidential
+            )
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 data = dialog.get_data()
                 self.employee_service.update_employee(self.user, employee_id, data)
@@ -290,8 +376,8 @@ class EmployeesTabNew(BaseTab):
         except ValidationError as e:
             self.show_error("Ошибка валидации", e.message)
         except Exception as e:
-            logging.error(f"Ошибка редактирования: {e}")
-            self.show_error("Ошибка", "Не удалось обновить данные")
+            logging.error(f"Ошибка редактирования: {e}", exc_info=True)
+            self.show_error("Ошибка", f"Не удалось обновить данные:\n{e}")
 
     def delete_employee(self):
         employee_id = self.get_selected_row_id()
@@ -310,8 +396,8 @@ class EmployeesTabNew(BaseTab):
         except PermissionDeniedError as e:
             self.show_error("Доступ запрещен", str(e))
         except Exception as e:
-            logging.error(f"Ошибка увольнения: {e}")
-            self.show_error("Ошибка", "Не удалось уволить сотрудника")
+            logging.error(f"Ошибка увольнения: {e}", exc_info=True)
+            self.show_error("Ошибка", f"Не удалось уволить сотрудника:\n{e}")
 
     def show_employee_details(self):
         employee_id = self.get_selected_row_id()
@@ -319,6 +405,8 @@ class EmployeesTabNew(BaseTab):
         try:
             employee = self.employee_service.get_employee_by_id(self.user, employee_id)
             if employee:
+                # HF-6: в карточке теперь видны контакты и ПДн
+                # (для ролей без VIEW_CONFIDENTIAL — замаскированные)
                 details = (
                     f"<b>ID:</b> {employee.employee_id}<br>"
                     f"<b>Имя:</b> {employee.first_name}<br>"
@@ -327,6 +415,11 @@ class EmployeesTabNew(BaseTab):
                     f"<b>Пол:</b> {employee.gender}<br>"
                     f"<b>Дата приема:</b> {Formatters.format_date(employee.hire_date)}<br>"
                     f"<b>Отдел:</b> {employee.department_name or ''}<br>"
+                    f"<b>Телефон:</b> {employee.phone or '—'}<br>"
+                    f"<b>Email:</b> {employee.email or '—'}<br>"
+                    f"<b>ИНН:</b> {employee.inn or '—'}<br>"
+                    f"<b>СНИЛС:</b> {employee.snils or '—'}<br>"
+                    f"<b>Паспорт:</b> {employee.passport or '—'}<br>"
                     f"<b>Статус:</b> {Formatters.format_status(employee.status)}<br>"
                 )
                 QMessageBox.information(self, "Детали сотрудника", details)

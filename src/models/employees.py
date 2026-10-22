@@ -26,10 +26,9 @@
         print(employee.full_name)  # "Иван Петров"
 """
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Optional, Union
+from typing import Optional
 
 VALID_GENDERS = ('М', 'Ж')
 VALID_STATUSES = ('active', 'inactive', 'fired')

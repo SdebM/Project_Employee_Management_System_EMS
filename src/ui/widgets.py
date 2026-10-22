@@ -26,11 +26,17 @@
     - :mod:`ui.base_tab` - базовый класс вкладки
 """
 
-from typing import List, Optional, Callable
+from typing import List, Optional
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QTableWidget, QTableWidgetItem, QHeaderView,
-    QLineEdit, QComboBox, QLabel, QGroupBox
+    QWidget,
+    QHBoxLayout,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QLineEdit,
+    QComboBox,
+    QLabel,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QIcon

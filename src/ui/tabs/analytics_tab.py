@@ -14,11 +14,19 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QComboBox, QLabel, QGroupBox, QGridLayout,
-    QScrollArea, QFrame, QSpinBox, QMessageBox, QFileDialog
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QGroupBox,
+    QGridLayout,
+    QScrollArea,
+    QFrame,
+    QSpinBox,
+    QMessageBox,
+    QFileDialog,
 )
-from PyQt6.QtCore import Qt
 
 from ui.base_tab import BaseTab
 from services.analytics_service import AnalyticsService

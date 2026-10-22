@@ -132,7 +132,8 @@ class ProjectRepository(BaseRepository[Project]):
         """
         params = self._entity_to_params(project)
         result = self._db.execute_query(query, params, return_result=True)
-        return result[0][0] if result else None
+        # RealDictCursor возвращает список словарей: доступ по имени колонки
+        return result[0]['project_id'] if result else None
 
     def update(self, project: Project) -> bool:
         """Обновляет данные проекта."""

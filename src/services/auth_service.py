@@ -18,12 +18,20 @@
 
 from typing import Optional, Dict, Any
 import logging
+import threading
+import time
 import bcrypt
 
 from models.users import User
 from repositories.user_repository import UserRepository
 from core.database import Database
 from core.exceptions import AuthenticationError, ValidationError
+from utils.validators import Validators
+
+
+# Настройки защиты от перебора паролей (brute force)
+MAX_FAILED_ATTEMPTS = 5       # Столько неудачных попыток подряд
+LOCKOUT_SECONDS = 15 * 60     # ...и блокировка входа на 15 минут
 
 
 class AuthService:
@@ -31,7 +39,8 @@ class AuthService:
     
     Обеспечивает:
     - Проверку учетных данных
-    - Хеширование паролей (базовое)
+    - Защиту от перебора паролей (временная блокировка после серии неудач)
+    - Хеширование паролей (bcrypt)
     - Управление сессиями
     - CRUD операции с пользователями
     
@@ -40,12 +49,23 @@ class AuthService:
         user = auth.authenticate('admin', 'password123')
     """
 
+    # --- Защита от перебора паролей ---
+    # Состояние хранится в памяти процесса (для десктоп-приложения этого
+    # достаточно; при переходе на клиент-серверную модель перенести в БД/Redis).
+    _failed_attempts: Dict[str, list] = {}  # username -> [количество, время последней попытки]
+    _lock_until: Dict[str, float] = {}      # username -> метка времени снятия блокировки
+    _lock_guard = threading.Lock()
+
     def __init__(self, db: Database):
         self._db = db
         self._repository = UserRepository(db)
 
     def authenticate(self, username: str, password: str) -> Optional[Dict]:
         """Аутентифицирует пользователя.
+        
+        После MAX_FAILED_ATTEMPTS неудачных попыток подряд вход для
+        логина блокируется на LOCKOUT_SECONDS секунд независимо от
+        правильности пароля — это замедляет офлайн/онлайн перебор.
         
         Args:
             username: Логин пользователя
@@ -55,20 +75,32 @@ class AuthService:
             Словарь с данными пользователя для сессии или None
             
         Raises:
-            AuthenticationError: При ошибке аутентификации
+            AuthenticationError: При ошибке аутентификации или блокировке
         """
         if not username or not password:
             raise AuthenticationError("Логин и пароль обязательны")
         
+        key = username.strip().lower()
+        
+        # Проверяем блокировку до любых обращений к БД/bcrypt
+        self._check_lockout(key)
+        
         user = self._repository.get_by_username(username.strip())
         
         if not user:
+            self._register_failed_attempt(key)
             logging.warning(f"Попытка входа с несуществующим логином: {username}")
             raise AuthenticationError("Неверные учетные данные")
         
         if not self._verify_password(password, user.password_hash):
+            self._register_failed_attempt(key)
             logging.warning(f"Неверный пароль для пользователя: {username}")
             raise AuthenticationError("Неверные учетные данные")
+        
+        # Успешный вход сбрасывает счётчик неудачных попыток
+        with self._lock_guard:
+            self._failed_attempts.pop(key, None)
+            self._lock_until.pop(key, None)
         
         # Обновляем дату последнего входа
         self._repository.update_last_login(user.id)
@@ -76,6 +108,39 @@ class AuthService:
         logging.info(f"Успешный вход пользователя: {username}")
         
         return user.to_session_dict()
+
+    # --- Методы защиты от перебора ---
+
+    def _check_lockout(self, key: str) -> None:
+        """Выбрасывает AuthenticationError, если логин временно заблокирован."""
+        with self._lock_guard:
+            until = self._lock_until.get(key, 0)
+            if until and time.monotonic() < until:
+                remaining = int(until - time.monotonic())
+                minutes, seconds = divmod(max(remaining, 1), 60)
+                raise AuthenticationError(
+                    f"Слишком много неудачных попыток. "
+                    f"Вход заблокирован еще {minutes} мин {seconds:02d} с."
+                )
+            elif until:
+                # Блокировка истекла — очищаем состояние
+                self._lock_until.pop(key, None)
+                self._failed_attempts.pop(key, None)
+
+    def _register_failed_attempt(self, key: str) -> None:
+        """Увеличивает счётчик неудач и при превышении лимита блокирует вход."""
+        with self._lock_guard:
+            attempts = self._failed_attempts.get(key, [0, 0.0])
+            attempts[0] += 1
+            attempts[1] = time.monotonic()
+            self._failed_attempts[key] = attempts
+            
+            if attempts[0] >= MAX_FAILED_ATTEMPTS:
+                self._lock_until[key] = time.monotonic() + LOCKOUT_SECONDS
+                logging.warning(
+                    f"Логин '{key}' заблокирован на {LOCKOUT_SECONDS} c "
+                    f"после {attempts[0]} неудачных попыток входа"
+                )
 
     def create_user(
         self, 
@@ -179,16 +244,14 @@ class AuthService:
         if not self._verify_password(old_password, user.password_hash):
             raise AuthenticationError("Неверный текущий пароль")
         
-        if len(new_password) < 4:
-            raise ValidationError("Пароль должен содержать не менее 4 символов")
+        self._check_password_policy(new_password)
         
         new_hash = self._hash_password(new_password)
         return self._repository.update_password(user_id, new_hash)
 
     def reset_password(self, admin_user: dict, user_id: int, new_password: str) -> bool:
         """Сбрасывает пароль пользователя (админ)."""
-        if len(new_password) < 4:
-            raise ValidationError("Пароль должен содержать не менее 4 символов")
+        self._check_password_policy(new_password)
         
         new_hash = self._hash_password(new_password)
         result = self._repository.update_password(user_id, new_hash)
@@ -268,9 +331,19 @@ class AuthService:
         if not username or len(username) < 3:
             raise ValidationError("Логин должен содержать не менее 3 символов", "username")
         
-        if not password or len(password) < 4:
-            raise ValidationError("Пароль должен содержать не менее 4 символов", "password")
+        self._check_password_policy(password)
         
         valid_roles = ['admin', 'manager', 'employee']
         if role not in valid_roles:
             raise ValidationError(f"Недопустимая роль: {role}", "role")
+
+    @staticmethod
+    def _check_password_policy(password: str) -> None:
+        """Проверяет пароль по политике безопасности (см. Validators.validate_password).
+        
+        Ранее допускался пароль из 4 символов без требований к составу —
+        это позволяло комбинации вида '1234', подбираемые мгновенно.
+        """
+        is_valid, msg = Validators.validate_password(password)
+        if not is_valid:
+            raise ValidationError(msg, "password")

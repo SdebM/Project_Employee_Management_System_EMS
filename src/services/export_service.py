@@ -1,8 +1,12 @@
-"""Сервис экспорта данных."""
+"""Сервис экспорта данных.
+
+Слой сервисов НЕ зависит от PyQt6: вместо живого QTableWidget
+принимается снимок данных (utils.table_snapshot.TableSnapshot),
+совместимый по интерфейсу с QTableWidget. Снимок создаётся в GUI-потоке
+и безопасно передаётся в фоновый QThread.
+"""
 
 import logging
-from typing import List, Any
-from PyQt6.QtWidgets import QWidget, QTableWidget, QFileDialog, QMessageBox
 
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import (
@@ -10,7 +14,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     Paragraph,
-    Spacer
+    Spacer,
 )
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -23,17 +27,19 @@ import pandas as pd
 from core.permissions import Permission, check_permission
 
 
+
 class PDFExporter:
     """Класс для экспорта данных таблицы в PDF-формат."""
 
     @staticmethod
-    def export_to_pdf(table_widget: QTableWidget, file_path: str, document_title: str) -> bool:
-        if table_widget.rowCount() == 0:
+    def export_to_pdf(table, file_path: str, document_title: str) -> bool:
+        """Экспортирует таблицу (QTableWidget или TableSnapshot) в PDF."""
+        if table.rowCount() == 0:
                 raise ValueError("Нет данных для экспорта")
 
         font_name = PDFExporter.register_fonts()
         styles = PDFExporter.create_styles(font_name)
-        headers, table_data = PDFExporter.prepare_data(table_widget, styles)
+        headers, table_data = PDFExporter.prepare_data(table, styles)
 
         doc = SimpleDocTemplate(
                 file_path,
@@ -48,36 +54,37 @@ class PDFExporter:
         elements.append(Paragraph(document_title, styles['Title']))
         elements.append(Spacer(1, 0.2 * 25.4))
 
-        table = Table(
+        table_obj = Table(
             table_data,
             colWidths=PDFExporter.calculate_column_widths(len(headers))
         )
-        table.setStyle(PDFExporter.create_table_style(font_name))
+        table_obj.setStyle(PDFExporter.create_table_style(font_name))
 
-        elements.append(table)
+        elements.append(table_obj)
         doc.build(elements)
+        return True
 
             
     @staticmethod
-    def prepare_data(table_widget, styles):
+    def prepare_data(table, styles):
         def format_text(text, is_header=False):
             style = styles['Header'] if is_header else styles['Body']
             text = str(text).strip() if text else ""
             return Paragraph(f"<b>{text}</b>" if is_header else text, style)
 
         headers = [
-            table_widget.horizontalHeaderItem(i).text()
-            for i in range(table_widget.columnCount())
+            table.horizontalHeaderItem(i).text()
+            for i in range(table.columnCount())
         ]
 
         table_data = []
         if headers:
             table_data.append([format_text(h, True) for h in headers])
 
-        for row in range(table_widget.rowCount()):
+        for row in range(table.rowCount()):
             formatted_row = []
-            for col in range(table_widget.columnCount()):
-                item = table_widget.item(row, col)
+            for col in range(table.columnCount()):
+                item = table.item(row, col)
                 text = item.text() if item else ""
                 formatted_row.append(format_text(text))
             table_data.append(formatted_row)
@@ -159,15 +166,15 @@ class ExcelExporter:
     """Класс для экспорта данных таблицы в Excel-формат."""
 
     @staticmethod
-    def export_to_excel(table_widget: QTableWidget, file_path: str, sheet_name: str = "Данные") -> bool:
-        """Экспортирует данные в Excel. Выбрасывает исключения при ошибках."""
-        if table_widget.rowCount() == 0:
+    def export_to_excel(table, file_path: str, sheet_name: str = "Данные") -> bool:
+        """Экспортирует таблицу (QTableWidget или TableSnapshot) в Excel."""
+        if table.rowCount() == 0:
             raise ValueError("Нет данных для экспорта")
 
-        headers = [table_widget.horizontalHeaderItem(i).text() for i in range(table_widget.columnCount())]
+        headers = [table.horizontalHeaderItem(i).text() for i in range(table.columnCount())]
         data = []
-        for row in range(table_widget.rowCount()):
-            row_data = [table_widget.item(row, col).text() if table_widget.item(row, col) else "" for col in range(table_widget.columnCount())]
+        for row in range(table.rowCount()):
+            row_data = [table.item(row, col).text() if table.item(row, col) else "" for col in range(table.columnCount())]
             data.append(row_data)
 
         df = pd.DataFrame(data, columns=headers)
@@ -179,7 +186,6 @@ class ExcelExporter:
 class ExportService:
     @staticmethod
     def check_export_permission(user: dict) -> bool:
-        from core.permissions import Permission, check_permission
         try:
             check_permission(user, Permission.EXPORT_DATA)
             return True
@@ -187,9 +193,11 @@ class ExportService:
             return False
 
     @staticmethod
-    def export_to_pdf(table_widget: QTableWidget, file_path: str, document_title: str) -> bool:
-        return PDFExporter.export_to_pdf(table_widget, file_path, document_title)
+    def export_to_pdf(table, file_path: str, document_title: str) -> bool:
+        """Экспортирует таблицу (QTableWidget или TableSnapshot) в PDF."""
+        return PDFExporter.export_to_pdf(table, file_path, document_title)
 
     @staticmethod
-    def export_to_excel(table_widget: QTableWidget, file_path: str, sheet_name: str = "Данные") -> bool:
-        return ExcelExporter.export_to_excel(table_widget, file_path, sheet_name)
+    def export_to_excel(table, file_path: str, sheet_name: str = "Данные") -> bool:
+        """Экспортирует таблицу (QTableWidget или TableSnapshot) в Excel."""
+        return ExcelExporter.export_to_excel(table, file_path, sheet_name)

@@ -40,7 +40,7 @@ class DepartmentRepository(BaseRepository[Department]):
         """
         query = """
             SELECT 
-                d.department_id, d.department_name,
+                d.department_id, d.department_name, d.description,
                 d.manager_id, d.created_at, d.updated_at,
                 CONCAT(e.first_name, ' ', e.last_name) as manager_name,
                 (SELECT COUNT(*) FROM employees WHERE department_id = d.department_id) as emp_count
@@ -67,12 +67,22 @@ class DepartmentRepository(BaseRepository[Department]):
         return departments
 
     def get_by_id(self, department_id: int) -> Optional[Department]:
-        """Получает отдел по ID."""
+        """Получает отдел по ID вместе со счётчиками сотрудников и проектов.
+        
+        Счётчики нужны сервису для безопасного удаления отдела:
+        employee_count считает только активных сотрудников, project_count —
+        связанные проекты (которые иначе каскадно удалятся вместе с отделом).
+        """
         query = """
             SELECT 
-                d.department_id, d.department_name,
+                d.department_id, d.department_name, d.description,
                 d.manager_id, d.created_at, d.updated_at,
-                CONCAT(e.first_name, ' ', e.last_name) as manager_name
+                CONCAT(e.first_name, ' ', e.last_name) as manager_name,
+                (SELECT COUNT(*) FROM employees 
+                    WHERE department_id = d.department_id 
+                    AND status = 'active') as employee_count,
+                (SELECT COUNT(*) FROM projects 
+                    WHERE department_id = d.department_id) as project_count
             FROM departments d
             LEFT JOIN employees e ON d.manager_id = e.employee_id
             WHERE d.department_id = %s
@@ -81,6 +91,8 @@ class DepartmentRepository(BaseRepository[Department]):
         if row:
             dept = Department.from_db_row(row)
             dept.manager_name = row.get('manager_name')
+            dept.employee_count = row.get('employee_count', 0) or 0
+            dept.project_count = row.get('project_count', 0) or 0
             return dept
         return None
 
@@ -97,7 +109,8 @@ class DepartmentRepository(BaseRepository[Department]):
         """
         params = self._entity_to_params(department)
         result = self._db.execute_query(query, params, return_result=True)
-        return result[0][0] if result else None
+        # RealDictCursor возвращает список словарей: доступ по имени колонки
+        return result[0]['department_id'] if result else None
 
     def update(self, department: Department) -> bool:
         """Обновляет данные отдела."""
@@ -119,14 +132,22 @@ class DepartmentRepository(BaseRepository[Department]):
         """Возвращает список отделов для выпадающего списка.
         
         Returns:
-            Список кортежей (department_id, department_name)
+            Список кортежей (department_id, department_name).
+            fetch_all() с RealDictCursor возвращает словари, поэтому
+            здесь выполняется явное преобразование к кортежам — иначе
+            распаковка ``for d_id, d_name in rows`` в UI вернула бы
+            имена колонок вместо значений.
         """
         query = """
             SELECT department_id, department_name 
             FROM departments 
             ORDER BY department_name
         """
-        return self._db.fetch_all(query)
+        rows = self._db.fetch_all(query)
+        return [
+            (row['department_id'], row['department_name'])
+            for row in rows
+        ]
 
     def get_department_statistics(self) -> List[Dict]:
         """Возвращает статистику по отделам.
@@ -148,9 +169,9 @@ class DepartmentRepository(BaseRepository[Department]):
         rows = self._db.fetch_all(query)
         return [
             {
-                'department_name': row[0],
-                'employee_count': row[1],
-                'total_salary': float(row[2]) if row[2] else 0
+                'department_name': row['department_name'],
+                'employee_count': row['employee_count'],
+                'total_salary': float(row['total_salary']) if row['total_salary'] else 0
             }
             for row in rows
         ]

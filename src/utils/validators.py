@@ -19,7 +19,6 @@
 
 import re
 from datetime import date
-from typing import Optional
 
 
 class Validators:
@@ -167,6 +166,35 @@ class Validators:
 
         if checksum != int(cleaned[9:]):
             return False, "Неверная контрольная сумма СНИЛС"
+
+        return True, None
+
+    @staticmethod
+    def validate_password(password: str) -> tuple:
+        """Проверяет пароль по политике безопасности.
+
+        Требования:
+            - длина не менее 8 символов;
+            - хотя бы одна буква (латиница или кириллица);
+            - хотя бы одна цифра.
+
+        Ранее допускался пароль из 4 любых символов, что позволяло
+        пароли вида '1234' — первый кандидат при переборе.
+
+        Args:
+            password: Пароль в открытом тексте
+
+        Returns:
+            (True, None) или (False, error_message)
+        """
+        if not password or len(password) < 8:
+            return False, "Пароль должен содержать не менее 8 символов"
+
+        if not re.search(r'[A-Za-zА-Яа-яЁё]', password):
+            return False, "Пароль должен содержать хотя бы одну букву"
+
+        if not re.search(r'\d', password):
+            return False, "Пароль должен содержать хотя бы одну цифру"
 
         return True, None
 

@@ -35,16 +35,25 @@ for path in (PROJECT_ROOT, SRC_DIR):
         sys.path.insert(0, path_str)
 
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QDialog, QMessageBox,
-    QVBoxLayout, QHBoxLayout, QWidget, QTabWidget,
-    QLabel, QLineEdit, QPushButton, QFormLayout
+    QApplication,
+    QMainWindow,
+    QDialog,
+    QMessageBox,
+    QVBoxLayout,
+    QHBoxLayout,
+    QWidget,
+    QTabWidget,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QFormLayout,
 )
 from PyQt6.QtCore import Qt
 
 # Новая архитектура
 from src.app import Application
 from src.core.exceptions import AuthenticationError, DatabaseError
-from src.styles import TABLE_STYLES, BUTTON_STYLES, INPUT_STYLES, TAB_STYLES
+from src.styles import TAB_STYLES
 
 
 class LoginDialog(QDialog):
@@ -119,7 +128,11 @@ class MainWindow(QMainWindow):
     
     def _init_ui(self):
         """Инициализация интерфейса."""
-        self.setWindowTitle(f"Employee Management System - {self.user.get('role', 'user')}")
+        # Маркер сборки: если его не видно в заголовке окна — запущены
+        # старые исходники (без HF-6: email не подтягивался в диалог
+        # редактирования и колонки Телефон/Email/ИНН/СНИЛС/Паспорт
+        # отсутствовали в таблице).
+        self.setWindowTitle(f"Employee Management System - {self.user.get('role', 'user')} | сборка 2.1")
         self.setMinimumSize(1200, 700)
         
         # Применяем общие стили к окну
@@ -164,8 +177,11 @@ class MainWindow(QMainWindow):
     def _create_tabs(self):
         """Создание вкладок на основе роли пользователя."""
         from src.ui.tabs import (
-            EmployeesTabNew, DepartmentsTab, ProjectsTab,
-            SalariesTab, AnalyticsTab
+            EmployeesTabNew,
+            DepartmentsTab,
+            ProjectsTab,
+            SalariesTab,
+            AnalyticsTab,
         )
         
         role = self.user.get('role', 'employee')
